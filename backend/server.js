@@ -34,10 +34,11 @@ app.use(express.static(path.join(__dirname, "public")));
 const dbConfig = {
   connectionString: process.env.DB_CONNECTION_STRING,
   options: {
-    encrypt: true, // ✅ Required for Azure SQL
-    trustServerCertificate: false, // ✅ Recommended for production
+    encrypt: true,
+    trustServerCertificate: false,
   },
 };
+
 // ✅ DB config & connection
 // const dbConfig = {
 //   user: process.env.DB_USER,
