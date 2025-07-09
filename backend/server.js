@@ -1,25 +1,24 @@
 /**
- * server.js
+ * server.js — fully working Event Management API with Express + MSSQL
  */
 
 require("dotenv").config();
 const express = require("express");
+const cors = require("cors");
+const sql = require("mssql");
 const path = require("path");
-const app = express();
 
-app.use(express.static(path.join(__dirname, "public")));
-
-// API routes
-app.use("/api", require("./routes")); // Your existing API routes
-
-// Handle client-side routing
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
+const app = express(); // ✅ Create app BEFORE you use it
 const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-// ✅ Always BEFORE routes:
+
+app.use(
+  cors({
+    origin: "http://localhost:8001",
+    credentials: true,
+  })
+);
+
+// ✅ JSON parser
 app.use(express.json());
 
 // ✅ Logger
@@ -28,8 +27,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ MSSQL config
-const config = {
+// ✅ Static files
+app.use(express.static(path.join(__dirname, "public")));
+
+// ✅ DB config & connection
+const dbConfig = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   server: process.env.DB_SERVER,
@@ -44,7 +46,7 @@ let pool;
 
 async function connectDB() {
   try {
-    pool = await sql.connect(config);
+    pool = await sql.connect(dbConfig);
     console.log("✅ Connected to SQL Server");
   } catch (err) {
     console.error("❌ DB Connection failed:", err);
@@ -53,8 +55,9 @@ async function connectDB() {
 }
 connectDB();
 
-// ✅ Routes
-app.get("/events", async (req, res) => {
+// ✅ Event CRUD routes — all under /api
+app.get("/api/events", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DB not connected" });
   try {
     const result = await pool.request().query("SELECT * FROM Events");
     res.json(result.recordset);
@@ -64,11 +67,13 @@ app.get("/events", async (req, res) => {
   }
 });
 
-app.post("/events", async (req, res) => {
+app.post("/api/events", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DB not connected" });
+  const { name, date, location } = req.body;
+  if (!name || !date || !location) {
+    return res.status(400).json({ error: "Missing fields" });
+  }
   try {
-    console.log("BODY:", req.body);
-    const { name, date, location } = req.body;
-
     const result = await pool
       .request()
       .input("name", sql.NVarChar(100), name)
@@ -77,23 +82,22 @@ app.post("/events", async (req, res) => {
       .query(
         `INSERT INTO Events (name, date, location) OUTPUT INSERTED.* VALUES (@name, @date, @location)`
       );
-
     res.status(201).json(result.recordset[0]);
   } catch (err) {
-    console.error("POST /events error:", err); // 👈 THE REAL ERROR WILL BE HERE
+    console.error(err);
     res
       .status(500)
       .json({ error: "Failed to create event", details: err.message });
   }
 });
 
-app.put("/events/:id", async (req, res) => {
+app.put("/api/events/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DB not connected" });
   const { id } = req.params;
-  const { name, date, location } = req.body || {};
+  const { name, date, location } = req.body;
   if (!name || !date || !location) {
-    return res.status(400).json({ error: "Missing fields", body: req.body });
+    return res.status(400).json({ error: "Missing fields" });
   }
-
   try {
     const exists = await pool
       .request()
@@ -102,7 +106,6 @@ app.put("/events/:id", async (req, res) => {
     if (exists.recordset.length === 0) {
       return res.status(404).json({ error: "Event not found" });
     }
-
     const result = await pool
       .request()
       .input("id", sql.Int, id)
@@ -112,7 +115,6 @@ app.put("/events/:id", async (req, res) => {
       .query(
         "UPDATE Events SET name = @name, date = @date, location = @location OUTPUT INSERTED.* WHERE id = @id"
       );
-
     res.json(result.recordset[0]);
   } catch (err) {
     console.error(err);
@@ -122,9 +124,9 @@ app.put("/events/:id", async (req, res) => {
   }
 });
 
-app.delete("/events/:id", async (req, res) => {
+app.delete("/api/events/:id", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DB not connected" });
   const { id } = req.params;
-
   try {
     const result = await pool
       .request()
@@ -140,5 +142,11 @@ app.delete("/events/:id", async (req, res) => {
   }
 });
 
-// ✅ Server
-// (Server already started above)
+// ✅ For SPA frontend routing
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+app.listen(PORT, () =>
+  console.log(`🚀 Server running on http://localhost:${PORT}`)
+);
