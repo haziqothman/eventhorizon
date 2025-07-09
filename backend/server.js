@@ -1,31 +1,9 @@
-/**
- * server.js
- */
-
 require("dotenv").config();
 const express = require("express");
+const path = require("path");
 const sql = require("mssql");
 const cors = require("cors");
-
 const app = express();
-
-// ✅ Correct order!
-app.use(
-  cors({
-    origin: ["http://localhost:3000"],
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type"],
-  })
-);
-
-// ✅ Always BEFORE routes:
-app.use(express.json());
-
-// ✅ Logger
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-  next();
-});
 
 // ✅ MSSQL config
 const config = {
@@ -52,8 +30,22 @@ async function connectDB() {
 }
 connectDB();
 
-// ✅ Routes
-app.get("/events", async (req, res) => {
+// ✅ Middleware (MUST COME BEFORE ROUTES)
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// ✅ Logger
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  next();
+});
+
+// ✅ Serve static files from React app
+app.use(express.static(path.join(__dirname, "public")));
+
+// ✅ API routes
+app.get("/api/events", async (req, res) => {
   try {
     const result = await pool.request().query("SELECT * FROM Events");
     res.json(result.recordset);
@@ -63,7 +55,7 @@ app.get("/events", async (req, res) => {
   }
 });
 
-app.post("/events", async (req, res) => {
+app.post("/api/events", async (req, res) => {
   try {
     console.log("BODY:", req.body);
     const { name, date, location } = req.body;
@@ -79,14 +71,14 @@ app.post("/events", async (req, res) => {
 
     res.status(201).json(result.recordset[0]);
   } catch (err) {
-    console.error("POST /events error:", err); // 👈 THE REAL ERROR WILL BE HERE
+    console.error("POST /events error:", err);
     res
       .status(500)
       .json({ error: "Failed to create event", details: err.message });
   }
 });
 
-app.put("/events/:id", async (req, res) => {
+app.put("/api/events/:id", async (req, res) => {
   const { id } = req.params;
   const { name, date, location } = req.body || {};
   if (!name || !date || !location) {
@@ -121,7 +113,7 @@ app.put("/events/:id", async (req, res) => {
   }
 });
 
-app.delete("/events/:id", async (req, res) => {
+app.delete("/api/events/:id", async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -137,6 +129,11 @@ app.delete("/events/:id", async (req, res) => {
     console.error(err);
     res.status(500).json({ error: "Failed to delete event" });
   }
+});
+
+// ✅ Handle client-side routing (MUST BE LAST)
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 // ✅ Server
