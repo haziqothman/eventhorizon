@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { format, parseISO } from "date-fns";
 
-const API_URL =
-  "https://eventhorizon-eufth7a5ambghxef.malaysiawest-01.azurewebsites.net/";
+const API_URL = "http://localhost:8000";
 
 function EventManagement() {
   const [events, setEvents] = useState([]);
