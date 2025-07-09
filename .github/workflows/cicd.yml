@@ -16,20 +16,44 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: '18'  # 👈 Downgraded to Node 18 for compatibility
+        node-version: '18'  # Using LTS version for better compatibility
         cache: 'npm'
 
     - name: Install dependencies
-      run: npm ci
       working-directory: ./backend
+      run: |
+        npm ci
+        # Optional: Run security audit
+        npm audit fix || true
 
     - name: Create deployment package
-      run: |
-        mkdir -p deployment
-        cp -r package.json package-lock.json server.js .env deployment/
-        cp -r node_modules deployment/
-        [ -d public ] && cp -r public deployment/  # 👈 Only copy if 'public' exists
       working-directory: ./backend
+      run: |
+        # Create deployment folder
+        mkdir -p deployment
+        
+        # Copy essential files
+        cp package.json package-lock.json server.js deployment/
+        
+        # Copy environment variables if they exist
+        if [ -f .env ]; then
+          cp .env deployment/
+          echo ".env copied to deployment"
+        else
+          echo "Warning: .env file not found"
+        fi
+        
+        # Copy public folder if it exists
+        if [ -d public ]; then
+          cp -R public deployment/
+          echo "public folder copied to deployment"
+        fi
+        
+        # Install production dependencies only
+        npm ci --production --prefix deployment
+        
+        echo "Deployment package created successfully"
+        ls -la deployment/
 
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v2
