@@ -1,87 +1,63 @@
-name: Combined Azure Deployment
+name: Build and deploy Node.js app to Azure Web App
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    types: [opened, synchronize, reopened, closed]
-    branches: [ "main" ]
+    branches:
+      - main
 
 jobs:
-  deploy_backend:
-    name: Deploy Backend to Azure App Service
+  build-and-deploy:
     runs-on: ubuntu-latest
-    environment: production
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'  # Using LTS version for better compatibility
+        cache: 'npm'
 
-      - name: Install backend dependencies
-        working-directory: ./backend
-        run: |
-          npm ci
-          npm audit fix || true
+    - name: Install dependencies
+      working-directory: ./backend
+      run: |
+        npm ci
+        # Optional: Run security audit
+        npm audit fix || true
 
-      - name: Create backend deployment package
-        working-directory: ./backend
-        run: |
-          mkdir -p deployment
-          # Copy all necessary files
-          cp package.json package-lock.json server.js deployment/
-          cp -R config/ deployment/config/ || true
-          cp -R routes/ deployment/routes/ || true
-          cp -R models/ deployment/models/ || true
-          
-          if [ -f .env ]; then
-            cp .env deployment/
-            echo ".env copied to deployment"
-          fi
-          
-          npm ci --production --prefix deployment
-          echo "Backend deployment package created"
+    - name: Create deployment package
+      working-directory: ./backend
+      run: |
+        # Create deployment folder
+        mkdir -p deployment
+        
+        # Copy essential files
+        cp package.json package-lock.json server.js deployment/
+        
+        # Copy environment variables if they exist
+        if [ -f .env ]; then
+          cp .env deployment/
+          echo ".env copied to deployment"
+        else
+          echo "Warning: .env file not found"
+        fi
+        
+        # Copy public folder if it exists
+        if [ -d public ]; then
+          cp -R public deployment/
+          echo "public folder copied to deployment"
+        fi
+        
+        # Install production dependencies only
+        npm ci --production --prefix deployment
+        
+        echo "Deployment package created successfully"
+        ls -la deployment/
 
-      - name: Deploy backend to Azure App Service
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: 'EventHorizon-Backend'
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: ./backend/deployment
-
-  deploy_frontend:
-    name: Deploy Frontend to Azure Static Web Apps
-    needs: deploy_backend
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
-
-      - name: Install frontend dependencies
-        working-directory: ./frontend
-        run: npm ci
-
-      - name: Build frontend
-        working-directory: ./frontend
-        run: npm run build
-
-      - name: Deploy to Azure Static Web App
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: "upload"
-          app_location: "frontend"
-          output_location: "build"
-          app_build_command: "npm run build"
+    - name: Deploy to Azure Web App
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: 'EventHorizon'
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        package: ./backend/deployment
