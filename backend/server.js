@@ -30,17 +30,25 @@ app.use((req, res, next) => {
 // ✅ Static files
 app.use(express.static(path.join(__dirname, "public")));
 
-// ✅ DB config & connection
+// ✅ SQL config — uses FULL connection string from env
 const dbConfig = {
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  server: process.env.DB_SERVER,
-  database: process.env.DB_NAME,
+  connectionString: process.env.DB_CONNECTION_STRING,
   options: {
-    encrypt: true,
-    trustServerCertificate: true,
+    encrypt: true, // ✅ Required for Azure SQL
+    trustServerCertificate: false, // ✅ Recommended for production
   },
 };
+// ✅ DB config & connection
+// const dbConfig = {
+//   user: process.env.DB_USER,
+//   password: process.env.DB_PASSWORD,
+//   server: process.env.DB_SERVER,
+//   database: process.env.DB_NAME,
+//   options: {
+//     encrypt: true,
+//     trustServerCertificate: true,
+//   },
+// };
 
 let pool;
 
