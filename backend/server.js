@@ -1,36 +1,23 @@
 /**
- * server.js — fully working Event Management API with Express + MSSQL
+ * server.js — working Event Management API (Express + MSSQL)
  */
 
 require("dotenv").config();
 const express = require("express");
-const cors = require("cors");
 const sql = require("mssql");
+const cors = require("cors");
 const path = require("path");
 
-const app = express(); // ✅ Create app BEFORE you use it
+const app = express();
 const PORT = process.env.PORT || 8000;
 
-app.use(
-  cors({
-    origin: "http://localhost:8001",
-    credentials: true,
-  })
-);
+console.log("🚀 Starting server.js");
 
-// ✅ JSON parser
+// ✅ Middleware
+app.use(cors());
 app.use(express.json());
 
-// ✅ Logger
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-  next();
-});
-
-// ✅ Static files
-app.use(express.static(path.join(__dirname, "public")));
-
-// ✅ SQL config — uses FULL connection string from env
+// ✅ MSSQL config
 const dbConfig = {
   connectionString: process.env.DB_CONNECTION_STRING,
   options: {
@@ -39,32 +26,26 @@ const dbConfig = {
   },
 };
 
-// ✅ DB config & connection
-// const dbConfig = {
-//   user: process.env.DB_USER,
-//   password: process.env.DB_PASSWORD,
-//   server: process.env.DB_SERVER,
-//   database: process.env.DB_NAME,
-//   options: {
-//     encrypt: true,
-//     trustServerCertificate: true,
-//   },
-// };
-
+// ✅ Declare shared pool
 let pool;
 
+// ✅ Connect once on startup
 async function connectDB() {
   try {
     pool = await sql.connect(dbConfig);
-    console.log("✅ Connected to SQL Server");
+    console.log("✅ Connected to DB");
   } catch (err) {
-    console.error("❌ DB Connection failed:", err);
-    setTimeout(connectDB, 5000);
+    console.error("❌ DB connect failed:", err.message);
   }
 }
 connectDB();
 
-// ✅ Event CRUD routes — all under /api
+// ✅ Health check
+app.get("/api/ping", (req, res) => {
+  res.send("pong");
+});
+
+// ✅ Get all events
 app.get("/api/events", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DB not connected" });
   try {
@@ -76,6 +57,7 @@ app.get("/api/events", async (req, res) => {
   }
 });
 
+// ✅ Create event
 app.post("/api/events", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DB not connected" });
   const { name, date, location } = req.body;
@@ -89,7 +71,9 @@ app.post("/api/events", async (req, res) => {
       .input("date", sql.DateTime, new Date(date))
       .input("location", sql.NVarChar(100), location)
       .query(
-        `INSERT INTO Events (name, date, location) OUTPUT INSERTED.* VALUES (@name, @date, @location)`
+        `INSERT INTO Events (name, date, location)
+         OUTPUT INSERTED.*
+         VALUES (@name, @date, @location)`
       );
     res.status(201).json(result.recordset[0]);
   } catch (err) {
@@ -100,6 +84,7 @@ app.post("/api/events", async (req, res) => {
   }
 });
 
+// ✅ Update event
 app.put("/api/events/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DB not connected" });
   const { id } = req.params;
@@ -122,7 +107,10 @@ app.put("/api/events/:id", async (req, res) => {
       .input("date", sql.DateTime, new Date(date))
       .input("location", sql.NVarChar(100), location)
       .query(
-        "UPDATE Events SET name = @name, date = @date, location = @location OUTPUT INSERTED.* WHERE id = @id"
+        `UPDATE Events
+         SET name = @name, date = @date, location = @location
+         OUTPUT INSERTED.*
+         WHERE id = @id`
       );
     res.json(result.recordset[0]);
   } catch (err) {
@@ -133,6 +121,7 @@ app.put("/api/events/:id", async (req, res) => {
   }
 });
 
+// ✅ Delete event
 app.delete("/api/events/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DB not connected" });
   const { id } = req.params;
@@ -140,22 +129,29 @@ app.delete("/api/events/:id", async (req, res) => {
     const result = await pool
       .request()
       .input("id", sql.Int, id)
-      .query("DELETE FROM Events OUTPUT DELETED.* WHERE id = @id");
+      .query(
+        `DELETE FROM Events
+         OUTPUT DELETED.*
+         WHERE id = @id`
+      );
     if (result.recordset.length === 0) {
       return res.status(404).json({ error: "Event not found" });
     }
     res.json({ message: "Deleted", event: result.recordset[0] });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to delete event" });
+    res
+      .status(500)
+      .json({ error: "Failed to delete event", details: err.message });
   }
 });
 
-// ✅ For SPA frontend routing
+// ✅ For SPA frontend fallback (optional)
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-app.listen(PORT, () =>
-  console.log(`🚀 Server running on http://localhost:${PORT}`)
-);
+// ✅ Start server — only once!
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+});
