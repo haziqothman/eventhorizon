@@ -142,7 +142,72 @@ app.delete("/api/events/:id", async (req, res) => {
   }
 });
 
-// ✅ For SPA frontend routing
+// ✅ Attendee CRUD operations — must come BEFORE the catch-all
+
+app.get("/api/attendees", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DB not connected" });
+  try {
+    const result = await pool.request().query("SELECT * FROM Attendees");
+    res.json(result.recordset);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch attendees" });
+  }
+});
+
+app.post("/api/attendees", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "Database not connected" });
+
+  const { name, email, eventId } = req.body;
+
+  if (!name || !email || !eventId) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  try {
+    const eventExists = await pool
+      .request()
+      .input("eventId", sql.Int, eventId)
+      .query("SELECT 1 FROM Events WHERE id = @eventId");
+
+    if (!eventExists.recordset.length) {
+      return res.status(404).json({ error: "Event not found" });
+    }
+
+    const result = await pool
+      .request()
+      .input("name", sql.NVarChar(100), name)
+      .input("email", sql.NVarChar(100), email)
+      .input("event_id", sql.Int, eventId)
+      .query(
+        `INSERT INTO Attendees (name, email, event_id)
+         OUTPUT INSERTED.*
+         VALUES (@name, @email, @event_id)`
+      );
+
+    res.status(201).json(result.recordset[0]);
+  } catch (err) {
+    console.error("Database error:", err);
+    res.status(500).json({ error: "Failed to register attendee" });
+  }
+});
+
+app.get("/api/events/:id/attendees", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DB not connected" });
+  const { id } = req.params;
+  try {
+    const result = await pool
+      .request()
+      .input("eventId", sql.Int, id)
+      .query("SELECT * FROM Attendees WHERE event_id = @eventId");
+    res.json(result.recordset);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch attendees" });
+  }
+});
+
+// ✅ SPA frontend catch-all — always last
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });

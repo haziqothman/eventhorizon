@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { format, parseISO } from "date-fns";
 
-const API_URL = "http://localhost:8000/api"; // Update with your actual API URL
+const API_URL = "http://localhost:8000/api";
 
 function EventManagement() {
   const [events, setEvents] = useState([]);
@@ -10,6 +10,14 @@ function EventManagement() {
     date: "",
     location: "",
   });
+  const [attendees, setAttendees] = useState([]);
+  const [attendeeForm, setAttendeeForm] = useState({
+    name: "",
+    email: "",
+    eventId: "",
+  });
+  const [view, setView] = useState("admin");
+  const [selectedEvent, setSelectedEvent] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -39,9 +47,28 @@ function EventManagement() {
     fetchEvents();
   }, []);
 
+  const fetchAttendees = async (eventId) => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/events/${eventId}/attendees`);
+      if (!response.ok) throw new Error("Failed to fetch attendees");
+      const data = await response.json();
+      setAttendees(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleAttendeeInputChange = (e) => {
+    const { name, value } = e.target;
+    setAttendeeForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e) => {
@@ -91,6 +118,51 @@ function EventManagement() {
     }
   };
 
+  const handleAttendeeSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const response = await fetch(`${API_URL}/attendees`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: attendeeForm.name,
+          email: attendeeForm.email,
+          eventId: selectedEvent.id,
+        }),
+      });
+
+      // Handle non-JSON responses
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        throw new Error(text || "Server returned invalid response");
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Registration failed");
+      }
+
+      setSuccess("Registered successfully!");
+      setAttendeeForm({ name: "", email: "", eventId: "" });
+      fetchAttendees(selectedEvent.id);
+    } catch (err) {
+      console.error("Registration error:", err);
+      setError(
+        err.message.includes("Cannot POST")
+          ? "Server endpoint not configured properly"
+          : err.message
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleEdit = (event) => {
     setFormData({
       name: event.name,
@@ -127,117 +199,208 @@ function EventManagement() {
     }
   };
 
+  const handleViewEvent = (event) => {
+    setSelectedEvent(event);
+    fetchAttendees(event.id);
+  };
+
   return (
     <div className="event-management">
-      <h1>Event Management</h1>
+      <div className="view-toggle">
+        <button
+          onClick={() => setView("admin")}
+          className={view === "admin" ? "active" : ""}
+        >
+          Admin View
+        </button>
+        <button
+          onClick={() => setView("attendee")}
+          className={view === "attendee" ? "active" : ""}
+        >
+          Attendee View
+        </button>
+      </div>
 
       {error && <div className="error">{error}</div>}
       {success && <div className="success">{success}</div>}
 
-      <form onSubmit={handleSubmit}>
-        <h2>{editingId ? "Edit Event" : "Create Event"}</h2>
+      {view === "admin" ? (
+        <>
+          <h1>Event Management (Admin)</h1>
 
-        <div className="form-group">
-          <label>Event Name:</label>
-          <input
-            type="text"
-            name="name"
-            value={formData.name}
-            onChange={handleInputChange}
-            required
-            minLength="2"
-          />
-        </div>
+          <form onSubmit={handleSubmit}>
+            <h2>{editingId ? "Edit Event" : "Create Event"}</h2>
 
-        <div className="form-group">
-          <label>Date:</label>
-          <input
-            type="datetime-local"
-            name="date"
-            value={formData.date}
-            onChange={handleInputChange}
-            required
-          />
-        </div>
+            <div className="form-group">
+              <label>Event Name:</label>
+              <input
+                type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleInputChange}
+                required
+                minLength="2"
+              />
+            </div>
 
-        <div className="form-group">
-          <label>Location:</label>
-          <input
-            type="text"
-            name="location"
-            value={formData.location}
-            onChange={handleInputChange}
-            required
-            minLength="2"
-          />
-        </div>
+            <div className="form-group">
+              <label>Date:</label>
+              <input
+                type="datetime-local"
+                name="date"
+                value={formData.date}
+                onChange={handleInputChange}
+                required
+              />
+            </div>
 
-        <button type="submit" disabled={loading}>
-          {loading
-            ? "Processing..."
-            : editingId
-            ? "Update Event"
-            : "Create Event"}
-        </button>
+            <div className="form-group">
+              <label>Location:</label>
+              <input
+                type="text"
+                name="location"
+                value={formData.location}
+                onChange={handleInputChange}
+                required
+                minLength="2"
+              />
+            </div>
 
-        {editingId && (
-          <button
-            type="button"
-            onClick={() => {
-              setFormData({ name: "", date: "", location: "" });
-              setEditingId(null);
-            }}
-            disabled={loading}
-          >
-            Cancel
-          </button>
-        )}
-      </form>
+            <button type="submit" disabled={loading}>
+              {loading
+                ? "Processing..."
+                : editingId
+                ? "Update Event"
+                : "Create Event"}
+            </button>
 
-      <div className="events-list">
-        <h2>Upcoming Events</h2>
+            {editingId && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({ name: "", date: "", location: "" });
+                  setEditingId(null);
+                }}
+                disabled={loading}
+              >
+                Cancel
+              </button>
+            )}
+          </form>
 
-        {loading && !events.length ? (
-          <p>Loading events...</p>
-        ) : events.length === 0 ? (
-          <p>No events found</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Date</th>
-                <th>Location</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+          <div className="events-list">
+            <h2>Upcoming Events</h2>
+
+            {loading && !events.length ? (
+              <p>Loading events...</p>
+            ) : events.length === 0 ? (
+              <p>No events found</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Date</th>
+                    <th>Location</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((event) => (
+                    <tr key={event.id}>
+                      <td>{event.name}</td>
+                      <td>{format(parseISO(event.date), "PPpp")}</td>
+                      <td>{event.location}</td>
+                      <td className="actions">
+                        <button
+                          onClick={() => handleEdit(event)}
+                          disabled={loading}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(event.id)}
+                          disabled={loading}
+                          className="delete"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <h1>Event Registration (Attendee)</h1>
+
+          {selectedEvent ? (
+            <div className="event-details">
+              <h2>{selectedEvent.name}</h2>
+              <p>Date: {format(parseISO(selectedEvent.date), "PPpp")}</p>
+              <p>Location: {selectedEvent.location}</p>
+
+              <h3>Register for this event</h3>
+              <form onSubmit={handleAttendeeSubmit}>
+                <div className="form-group">
+                  <label>Your Name:</label>
+                  <input
+                    type="text"
+                    name="name"
+                    value={attendeeForm.name}
+                    onChange={handleAttendeeInputChange}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Email:</label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={attendeeForm.email}
+                    onChange={handleAttendeeInputChange}
+                    required
+                  />
+                </div>
+                <input type="hidden" name="eventId" value={selectedEvent.id} />
+                <button type="submit" disabled={loading}>
+                  {loading ? "Registering..." : "Register"}
+                </button>
+              </form>
+
+              <h3>Attendees ({attendees.length})</h3>
+              <ul className="attendees-list">
+                {attendees.map((attendee) => (
+                  <li key={attendee.id}>
+                    {attendee.name} ({attendee.email})
+                  </li>
+                ))}
+              </ul>
+
+              <button onClick={() => setSelectedEvent(null)}>
+                Back to Events
+              </button>
+            </div>
+          ) : (
+            <div className="events-list">
+              <h2>Available Events</h2>
               {events.map((event) => (
-                <tr key={event.id}>
-                  <td>{event.name}</td>
-                  <td>{format(parseISO(event.date), "PPpp")}</td>
-                  <td>{event.location}</td>
-                  <td className="actions">
-                    <button
-                      onClick={() => handleEdit(event)}
-                      disabled={loading}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(event.id)}
-                      disabled={loading}
-                      className="delete"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
+                <div key={event.id} className="event-card">
+                  <h3>{event.name}</h3>
+                  <p>Date: {format(parseISO(event.date), "PPpp")}</p>
+                  <p>Location: {event.location}</p>
+                  <button onClick={() => handleViewEvent(event)}>
+                    View Details
+                  </button>
+                </div>
               ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
